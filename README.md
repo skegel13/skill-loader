@@ -12,6 +12,15 @@ Nothing from an external repository becomes available to an agent until it has
 been reviewed in `pending/` and explicitly activated. The repository cache,
 staging area, and activated skills are local state and are ignored by Git.
 
+## Requirements
+
+`bin/sync-repos` requires Git and Python 3.11 or later. TOML parsing uses
+Python's standard-library `tomllib` module, so no Python packages need to be
+installed.
+
+Use `bin/sync-repos --dry-run` to validate configured local checkouts and see
+the planned clone or fast-forward operations without changing them.
+
 ## Workflow
 
 1. Copy `config.toml.example` to `config.toml`, then add the repositories and
