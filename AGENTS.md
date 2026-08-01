@@ -4,9 +4,13 @@ This project is a review gate for third-party agent skills. Preserve the
 pipeline and its trust boundaries:
 
 ```text
-external repository → repos/ → pending/ → active/ → agent symlink
-       untrusted       untrusted  approved     available to an agent
+external repository → repos/ → active/ → agent symlink
+       untrusted       untrusted approved  available to an agent
 ```
+
+There is no `pending/` stage. The repository checkout is the review surface;
+activation copies approved skills into `active/`. Agent symlinks may point only
+into `active/`.
 
 ## Invariants
 
@@ -15,15 +19,21 @@ external repository → repos/ → pending/ → active/ → agent symlink
   from the filesystem.
 - Model skills in each repository's `skills` array; skills belong to their
   source repository rather than being a separate top-level collection.
-- `repos/`, `pending/`, and `active/` are ignored runtime state. Never commit
-  their contents.
+- `repos/` and `active/` are ignored runtime state. Never commit their
+  contents.
 - Synchronization only clones or fast-forward-pulls configured repositories.
   It must not reset, clean, rebase, force-pull, or modify a dirty checkout.
-- Fetching copies declared skill directories into `pending/`; it does not write
+- Skill status is read-only: it compares configured skills in repository
+  checkouts against active skills and reports orphans. It does not write
   `active/`, create agent links, execute imported files, or install packages.
 - Activation is the only operation that writes `active/` or agent skill
-  directories. It may touch only paths owned by the manifest and must only
-  create symlinks that point into `active/`.
+  directories. It copies explicitly named skills from the checkout working tree
+  (dirty checkouts allowed), may touch only paths owned by the manifest, and
+  must only create symlinks that point into `active/`. It never bulk-activates
+  every differing skill.
+- Sync never mutates `active/`. Skipping activation is denial; denial is not
+  stored. Orphans are left in place and only reported until an explicit
+  removal command exists.
 - Reject malformed input early: duplicate repository or skill names, absolute
   or escaping repository skill paths, missing `SKILL.md`, and agent skill paths
   using `~` or environment-variable expansion are errors. Resolve relative
@@ -37,8 +47,8 @@ external repository → repos/ → pending/ → active/ → agent symlink
 Keep the three commands independent and small:
 
 1. `bin/sync-repos` owns Git checkout state.
-2. `bin/fetch-skills` owns pending snapshots.
-3. `bin/activate-skills` owns promotion and agent symlinks.
+2. `bin/skill-status` owns read-only comparison against `active/`.
+3. `bin/activate-skills` owns promotion into `active/` and agent symlinks.
 
 Put shared manifest parsing, path validation, and filesystem operations in a
 small library with unit tests. Commands should print the repository, skill, and
@@ -58,10 +68,13 @@ Cover at least these behaviours before changing the command implementation:
 - clone versus clean fast-forward pull, and refusal of dirty or divergent
   repositories;
 - manifest validation and path traversal rejection;
-- a fetch that never changes active skills or agent directories;
+- skill status that never changes active skills or agent directories;
 - rejection of source symlinks escaping the skill root;
-- activation creates correct relative or absolute links into `active/`;
-- a conflicting unmanaged target is preserved; and
+- activation from a checkout copies into `active/` and creates correct
+  relative or absolute links into `active/`;
+- activation requires explicit skill names and may run on a dirty checkout;
+- a conflicting unmanaged target is preserved;
+- orphans are reported and not deleted automatically; and
 - failures during activation leave prior active skills and managed links usable.
 
 Treat imported skill contents as test fixtures, never executable setup steps.
