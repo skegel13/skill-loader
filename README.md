@@ -4,7 +4,7 @@
 review-first pipeline:
 
 ```text
-manifest.toml → repos/ → pending/ → active/ → agent skill directories
+config.toml → repos/ → pending/ → active/ → agent skill directories
                   clone/pull  copy     approve    symlink
 ```
 
@@ -14,7 +14,8 @@ staging area, and activated skills are local state and are ignored by Git.
 
 ## Workflow
 
-1. Add a repository and the skills to import to `manifest.toml`.
+1. Copy `config.toml.example` to `config.toml`, then add the repositories and
+   skills to import.
 2. Run `bin/sync-repos` to clone missing repositories into `repos/`, or pull
    existing ones.
 3. Run `bin/fetch-skills` to copy the selected skill directories to `pending/`.
@@ -27,38 +28,39 @@ and activation must never fetch, pull, or execute code from a source repo.
 
 ## Manifest
 
-Keep the manifest at `manifest.toml` in the project root. Repository names are
-local identifiers; they determine the directory below `repos/`. Skill names
-are the identifiers used below `pending/` and `active/`.
+Keep the configuration at `config.toml` in the project root. Define agent paths
+first, then repositories. Repository names determine the directory below
+`repos/`; skill names determine the directories below `pending/` and `active/`.
 
 ```toml
-[[repositories]]
+[agent_paths]
+paths = ["./agents/skills", "./.claude/skills"]
+
+[[repository]]
 name = "example-skills"
 url = "https://github.com/example/agent-skills.git"
 branch = "main"
+skills = [
+  { name = "release-checklist", path = "skills/release-checklist" },
+]
 
-[[skills]]
-name = "release-checklist"
-repository = "example-skills"
-path = "skills/release-checklist"
-
-[[agents]]
-name = "codex"
-skills_path = "/absolute/path/to/.codex/skills"
-
-[[agents]]
-name = "claude"
-skills_path = "/absolute/path/to/.claude/skills"
+[[repository]]
+name = "team-skills"
+url = "https://github.com/example/team-skills.git"
+branch = "main"
+skills = [
+  { name = "incident-response", path = "skills/incident-response" },
+]
 ```
 
-`path` is relative to the configured repository root and must name a skill
-directory (normally one containing `SKILL.md`). `skills_path` is the directory
-where that agent discovers skills. The loader will create one symlink per
-active skill at `<skills_path>/<skill name>`.
+`path` is relative to its repository root and must name a skill directory
+(containing `SKILL.md`). `agent_paths.paths` lists the directories where agents
+discover skills. The loader creates one symlink per active skill at
+`<agent path>/<skill name>`.
 
-Use absolute paths for agent directories. Do not use `~`, environment-variable
-expansion, or paths that escape a repository or skill directory: the loader
-should treat these as invalid manifest values.
+Agent paths may be absolute or relative to `config.toml`. Do not use `~` or
+environment-variable expansion. Repository skill paths must not escape their
+repository.
 
 ## Command contracts
 
@@ -93,13 +95,14 @@ approval decision remains outside the fetch step.
 ## Local directories
 
 ```text
-manifest.toml  # tracked configuration
+config.toml.example # tracked configuration template
+config.toml         # local configuration
 repos/         # ignored Git checkouts
 pending/       # ignored, untrusted skill snapshots
 active/        # ignored, approved skill snapshots
 bin/           # tracked command entry points
 ```
 
-`repos/`, `pending/`, and `active/` must be listed in `.gitignore` when the
-commands are implemented. Keep `manifest.toml` tracked so the imported skill
-set is reproducible and reviewable.
+`config.toml`, `repos/`, `pending/`, and `active/` must be listed in
+`.gitignore` when the commands are implemented. Keep `config.toml.example`
+tracked so the expected configuration remains reviewable.

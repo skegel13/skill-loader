@@ -10,8 +10,11 @@ external repository → repos/ → pending/ → active/ → agent symlink
 
 ## Invariants
 
-- `manifest.toml` is the only source of desired repositories, skills, and agent
-  destinations. Do not infer configuration from the filesystem.
+- `config.toml` is the only source of desired agent paths, repositories, and
+  skills. Agent paths are in `agent_paths.paths`; do not infer configuration
+  from the filesystem.
+- Model skills in each repository's `skills` array; skills belong to their
+  source repository rather than being a separate top-level collection.
 - `repos/`, `pending/`, and `active/` are ignored runtime state. Never commit
   their contents.
 - Synchronization only clones or fast-forward-pulls configured repositories.
@@ -21,9 +24,10 @@ external repository → repos/ → pending/ → active/ → agent symlink
 - Activation is the only operation that writes `active/` or agent skill
   directories. It may touch only paths owned by the manifest and must only
   create symlinks that point into `active/`.
-- Reject malformed input early: duplicate names, unknown repositories, absolute
-  or escaping skill paths, missing `SKILL.md`, and target directories outside
-  an explicit absolute `skills_path` are errors.
+- Reject malformed input early: duplicate repository or skill names, absolute
+  or escaping repository skill paths, missing `SKILL.md`, and agent skill paths
+  using `~` or environment-variable expansion are errors. Resolve relative
+  agent skill paths from the directory containing `config.toml`.
 - Do not follow a source symlink that resolves outside its declared skill
   directory. Preserve or reject internal symlinks intentionally; never copy a
   link as an unchecked escape hatch.

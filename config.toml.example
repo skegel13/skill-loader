@@ -1,0 +1,31 @@
+# Copy this file to config.toml.
+# Replace the example values.
+
+# Active skills are linked here.
+# Paths are relative to this file or absolute.
+[agent_paths]
+paths = [
+  "~/.agents/skills",
+  "~/.claude/skills",
+]
+
+[[repository]]
+# A unique local name.
+name = "example-skills"
+url = "https://github.com/example/agent-skills.git"
+branch = "main"
+
+# Paths are relative to this repository.
+skills = [
+  { name = "release-checklist", path = "skills/release-checklist" },
+]
+
+[[repository]]
+# Use a different name for each repository.
+name = "team-skills"
+url = "https://github.com/example/team-skills.git"
+branch = "main"
+
+skills = [
+  { name = "incident-response", path = "skills/incident-response" },
+]
