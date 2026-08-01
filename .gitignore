@@ -2,3 +2,4 @@ config.toml
 /repos/*
 !/repos/.gitkeep
 /active/
+__pycache__/

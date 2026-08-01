@@ -5,8 +5,8 @@
 # Paths are relative to this file or absolute.
 [agent_paths]
 paths = [
-  "~/.agents/skills",
-  "~/.claude/skills",
+  "./agents/skills",
+  "./.claude/skills",
 ]
 
 [[repository]]
