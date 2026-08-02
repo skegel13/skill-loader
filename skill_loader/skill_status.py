@@ -28,6 +28,14 @@ class Review:
     status: str
 
 
+@dataclass(frozen=True)
+class DiffSection:
+    """One changed tree entry, kept separate so it can be rendered safely."""
+
+    source_name: str
+    lines: tuple[str, ...]
+
+
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -124,10 +132,10 @@ def _entry_lines(path: Path | None) -> list[str] | None:
     return None if lines is None else [f"mode {mode:o}\n", *lines]
 
 
-def review_diff(review: Review) -> str:
+def review_diff_sections(review: Review) -> list[DiffSection]:
     active_entries = _tree_entries(review.active)
     source_entries = _tree_entries(review.source)
-    output: list[str] = []
+    sections: list[DiffSection] = []
     active_prefix = f"active/{review.skill.name}"
     source_prefix = f"repos/{review.skill.repository_name}/{review.skill.path.as_posix()}"
     for relative in sorted(set(active_entries) | set(source_entries)):
@@ -137,11 +145,109 @@ def review_diff(review: Review) -> str:
         if old_lines is None or new_lines is None:
             if old is not None and new is not None and old.is_file() and new.is_file() and old.read_bytes() == new.read_bytes() and (old.lstat().st_mode & 0o7777) == (new.lstat().st_mode & 0o7777):
                 continue
-            output.append(f"Binary or type-changing entry: {old_name} -> {new_name}\n")
+            sections.append(DiffSection(new_name, (f"Binary or type-changing entry: {old_name} -> {new_name}\n",)))
             continue
         if old_lines != new_lines:
-            output.extend(difflib.unified_diff(old_lines, new_lines, fromfile=old_name, tofile=new_name))
-    return "".join(output)
+            sections.append(DiffSection(new_name, tuple(difflib.unified_diff(old_lines, new_lines, fromfile=old_name, tofile=new_name))))
+    return sections
+
+
+def review_diff(review: Review) -> str:
+    """Return the complete, plain-text diff retained for callers and tests."""
+    return "".join(line for section in review_diff_sections(review) for line in section.lines)
+
+
+class DiffRenderer:
+    """Optional terminal decoration; it never changes the reviewed text."""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    RED = "\033[31m"
+    MAGENTA = "\033[35m"
+    YELLOW = "\033[33m"
+
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self._highlight = None
+        self._lexer_for_filename = None
+        self._formatter = None
+        if enabled:
+            try:
+                from pygments import highlight
+                from pygments.formatters import TerminalFormatter
+                from pygments.lexers import get_lexer_for_filename
+
+                self._highlight = highlight
+                self._lexer_for_filename = get_lexer_for_filename
+                self._formatter = TerminalFormatter()
+            except ImportError:
+                pass
+
+    def style(self, text: str, style: str) -> str:
+        return f"{style}{text}{self.RESET}" if self.enabled else text
+
+    def prompt(self, text: str) -> str:
+        return self.style(text, self.BOLD + self.CYAN)
+
+    def review_heading(self, text: str) -> str:
+        return self.style(text, self.BOLD + self.YELLOW)
+
+    def _highlight_content(self, content: str, filename: str) -> str:
+        if self._highlight is None or self._lexer_for_filename is None or self._formatter is None:
+            return content
+
+    @property
+    def has_pygments(self) -> bool:
+        return self._highlight is not None
+        try:
+            # Pygments supplies language-aware colours for source text.  Keep
+            # the diff marker outside it, so additions and deletions are clear.
+            trailing_newline = content.endswith("\n")
+            highlighted = self._highlight(content, self._lexer_for_filename(filename), self._formatter)
+            return highlighted.rstrip("\n") + ("\n" if trailing_newline else "")
+        except Exception:
+            # An unknown extension or an optional formatter failure must never
+            # stop a safety review.
+            return content
+
+    def render_section(self, section: DiffSection) -> str:
+        output: list[str] = []
+        for line in section.lines:
+            if line.startswith(("--- ", "+++ ")):
+                output.append(self.style(line, self.BOLD + self.CYAN))
+            elif line.startswith("@@"):
+                output.append(self.style(line, self.MAGENTA))
+            elif line.startswith("+"):
+                marker, content = line[:1], line[1:]
+                if not self.has_pygments:
+                    output.append(self.style(line, self.BOLD + self.GREEN))
+                else:
+                    output.append(self.style(marker, self.BOLD + self.GREEN) + self._highlight_content(content, section.source_name))
+            elif line.startswith("-"):
+                marker, content = line[:1], line[1:]
+                if not self.has_pygments:
+                    output.append(self.style(line, self.BOLD + self.RED))
+                else:
+                    output.append(self.style(marker, self.BOLD + self.RED) + self._highlight_content(content, section.source_name))
+            elif line.startswith("Binary or type-changing entry:"):
+                output.append(self.style(line, self.BOLD + self.YELLOW))
+            else:
+                output.append(line)
+        return "".join(output)
+
+
+def render_review_diff(review: Review, renderer: DiffRenderer) -> str:
+    return "".join(renderer.render_section(section) for section in review_diff_sections(review))
+
+
+def _color_enabled(policy: str) -> bool:
+    if policy == "always":
+        return True
+    if policy == "never":
+        return False
+    return sys.stdout.isatty() and os.environ.get("TERM", "").lower() != "dumb"
 
 
 def _managed_link(path: Path, active_skill: Path) -> bool:
@@ -299,7 +405,14 @@ def _prompt(prompt: str, allowed: set[str]) -> str:
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Review and activate configured skills.")
     parser.add_argument("--dry-run", action="store_true", help="Show reviews without prompting or changing files.")
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="Colour review output (default: auto).",
+    )
     options = parser.parse_args(arguments)
+    renderer = DiffRenderer(_color_enabled(options.color))
     config_file = PROJECT_DIRECTORY / "config.toml"
     if not config_file.is_file():
         print(f"Configuration file not found: {config_file}", file=sys.stderr)
@@ -322,34 +435,48 @@ def main(arguments: list[str] | None = None) -> int:
 
     for review in reviews:
         print(f"{review.skill.repository_name}/{review.skill.name}: {review.status}")
-    for review in candidates:
-        diff = review_diff(review)
-        print(diff, end="" if diff.endswith("\n") else "\n")
     orphans = orphan_skills({skill.name for skill in manifest.skills}, active_directory)
     links = orphan_links({skill.name for skill in manifest.skills}, active_directory, manifest.agent_paths)
-    for orphan in orphans:
-        print(f"active/{orphan.name}: orphan")
-    for link in links:
-        print(f"{link}: orphan link")
     if options.dry_run:
+        for index, review in enumerate(candidates, start=1):
+            print(renderer.review_heading(
+                f"Review {index}/{len(candidates)}: {review.skill.repository_name}/{review.skill.name} ({review.status})"
+            ))
+            diff = render_review_diff(review, renderer)
+            print(diff, end="" if diff.endswith("\n") else "\n")
+        for orphan in orphans:
+            print(f"active/{orphan.name}: orphan")
+        for link in links:
+            print(f"{link}: orphan link")
         return 1 if candidates or orphans or links or any(review.status == "missing" for review in reviews) else 0
     try:
-        for review in candidates:
-            answer = _prompt(f"Activate {review.skill.repository_name}/{review.skill.name}? [a]pprove, [r]eject, [q]uit: ", {"a", "r", "q"})
+        for index, review in enumerate(candidates, start=1):
+            print(renderer.review_heading(
+                f"Review {index}/{len(candidates)}: {review.skill.repository_name}/{review.skill.name} ({review.status})"
+            ))
+            diff = render_review_diff(review, renderer)
+            print(diff, end="" if diff.endswith("\n") else "\n")
+            answer = _prompt(renderer.prompt(
+                f"Activate {review.skill.repository_name}/{review.skill.name}? [a]pprove, [r]eject, [q]uit: "
+            ), {"a", "r", "q"})
             if answer == "q":
                 return 0
             if answer == "a":
                 print(f"Activating {review.skill.repository_name}/{review.skill.name} into {active_directory / review.skill.name}")
                 promote(review, active_directory, manifest.agent_paths)
         for orphan in orphans:
-            if _prompt(f"Remove orphan active/{orphan.name}? [y]es, [n]o: ", {"y", "n"}) == "y":
+            print(f"active/{orphan.name}: orphan")
+        for link in links:
+            print(f"{link}: orphan link")
+        for orphan in orphans:
+            if _prompt(renderer.prompt(f"Remove orphan active/{orphan.name}? [y]es, [n]o: "), {"y", "n"}) == "y":
                 print(f"Removing active/{orphan.name}")
                 remove_orphan(orphan, [link for link in links if link.name == orphan.name])
         for link in links:
             if not link.exists() and not link.is_symlink():
                 continue
             if link.name not in {orphan.name for orphan in orphans}:
-                if _prompt(f"Remove orphan link {link}? [y]es, [n]o: ", {"y", "n"}) == "y":
+                if _prompt(renderer.prompt(f"Remove orphan link {link}? [y]es, [n]o: "), {"y", "n"}) == "y":
                     print(f"Removing orphan link {link}")
                     link.unlink()
     except (OSError, UnsafeSkillError, EOFError) as error:

@@ -37,8 +37,10 @@ may point only into `active/`.
   must preserve all unmanaged files and links.
 - Reject malformed input early: duplicate repository or skill names, absolute
   or escaping repository skill paths, missing `SKILL.md`, and agent skill paths
-  using `~` or environment-variable expansion are errors. Resolve relative
-  agent skill paths from the directory containing `config.toml`.
+  using environment-variable expansion (`$` or `%`) are errors. Leading `~` /
+  `~/...` in agent paths expands to the home directory; mid-path `~` is an
+  error. Resolve relative agent skill paths from the directory containing
+  `config.toml`.
 - Do not follow a source symlink that resolves outside its declared skill
   directory. Preserve or reject internal symlinks intentionally; never copy a
   link as an unchecked escape hatch.

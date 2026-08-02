@@ -33,7 +33,8 @@ the planned clone or fast-forward operations without changing them.
 2. Run `bin/sync-repos` to clone missing repositories into `repos/`, or pull
    existing ones.
 3. Run `bin/skill-status`. It displays a complete recursive unified diff for
-   each new or changed skill and prompts you to activate, reject, or quit.
+   each new or changed skill, one at a time, and prompts you to activate,
+   reject, or quit before showing the next review.
    Approved skills are copied into `active/` and linked into configured agent
    paths immediately; rejected skills are left unchanged. Unchanged skills are
    skipped and missing configured skills are reported.
@@ -44,6 +45,11 @@ the planned clone or fast-forward operations without changing them.
 The commands are deliberately separate. Skill status never syncs, pulls, or
 executes code from a source repository. Skipping activation is denial; denial
 is not stored.
+
+`bin/skill-status --color auto` is the default: it colours interactive
+terminals, while captured output stays plain. Use `--color always` to force
+ANSI styling or `--color never` for plain logs. If Pygments is installed,
+changed text is highlighted by filename; it is never required.
 
 ## Manifest
 
@@ -77,9 +83,9 @@ skills = [
 discover skills. The loader creates one symlink per active skill at
 `<agent path>/<skill name>`.
 
-Agent paths may be absolute or relative to `config.toml`. Do not use `~` or
-environment-variable expansion. Repository skill paths must not escape their
-repository.
+Agent paths may be absolute, relative to `config.toml`, or home-relative with
+a leading `~` or `~/...`. Do not use environment-variable expansion (`$` or
+`%`). Repository skill paths must not escape their repository.
 
 ## Command contracts
 

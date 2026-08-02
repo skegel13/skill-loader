@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import io
+import builtins
 from unittest import mock
 from pathlib import Path
 
@@ -76,6 +78,100 @@ class SkillStatusTests(unittest.TestCase):
             self.assertNotIn("Activate", result.stdout)
             self.assertFalse((project / "active").exists())
             self.assertFalse((project / "agents").exists())
+
+    def test_reviews_each_skill_before_showing_the_next_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            config = project / "config.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    'skills = [{ name = "release-checklist", path = "skills/release-checklist" }]',
+                    'skills = [{ name = "release-checklist", path = "skills/release-checklist" }, { name = "second", path = "skills/second" }]',
+                ),
+                encoding="utf-8",
+            )
+            self.create_source_skill(project, "# First\n")
+            second = project / "repos" / "fixture" / "skills" / "second"
+            second.mkdir(parents=True)
+            (second / "SKILL.md").write_text("# Second\n", encoding="utf-8")
+            output = io.StringIO()
+            answers = iter(("r", "r"))
+
+            def answer_after_expected_review(_: str) -> str:
+                expected = "Review 1/2" if not getattr(answer_after_expected_review, "called", False) else "Review 2/2"
+                self.assertIn(expected, output.getvalue())
+                if expected == "Review 1/2":
+                    self.assertNotIn("# Second", output.getvalue())
+                    answer_after_expected_review.called = True
+                return next(answers)
+
+            with mock.patch.object(skill_status, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", side_effect=answer_after_expected_review):
+                self.assertEqual(skill_status.main(["--color", "never"]), 0)
+
+            self.assertLess(output.getvalue().index("Review 1/2"), output.getvalue().index("Review 2/2"))
+
+    def test_quit_does_not_show_later_reviews_or_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            config = project / "config.toml"
+            config.write_text(
+                config.read_text(encoding="utf-8").replace(
+                    'skills = [{ name = "release-checklist", path = "skills/release-checklist" }]',
+                    'skills = [{ name = "release-checklist", path = "skills/release-checklist" }, { name = "second", path = "skills/second" }]',
+                ),
+                encoding="utf-8",
+            )
+            self.create_source_skill(project)
+            second = project / "repos" / "fixture" / "skills" / "second"
+            second.mkdir(parents=True)
+            (second / "SKILL.md").write_text("# Second\n", encoding="utf-8")
+            orphan = project / "active" / "old-skill"
+            orphan.mkdir(parents=True)
+            (orphan / "SKILL.md").write_text("# Old\n", encoding="utf-8")
+            output = io.StringIO()
+
+            with mock.patch.object(skill_status, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", return_value="q"):
+                self.assertEqual(skill_status.main(["--color", "never"]), 0)
+
+            self.assertIn("Review 1/2", output.getvalue())
+            self.assertNotIn("Review 2/2", output.getvalue())
+            self.assertNotIn("active/old-skill: orphan", output.getvalue())
+
+    def test_colour_policies_are_deterministic_when_output_is_captured(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            self.create_source_skill(project)
+
+            auto = self.run_status(project, "--dry-run")
+            never = self.run_status(project, "--dry-run", "--color", "never")
+            always = self.run_status(project, "--dry-run", "--color", "always")
+
+            self.assertNotIn("\x1b[", auto.stdout)
+            self.assertNotIn("\x1b[", never.stdout)
+            self.assertIn("\x1b[", always.stdout)
+
+    def test_colour_falls_back_cleanly_when_pygments_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            source = self.create_source_skill(project)
+            (source / "unknown.extension").write_text("content\n", encoding="utf-8")
+            review = skill_status.inspect_skill(
+                skill_status.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
+                project / "repos",
+                project / "active",
+            )
+            real_import = builtins.__import__
+
+            def no_pygments(name: str, *args: object, **kwargs: object) -> object:
+                if name.startswith("pygments"):
+                    raise ImportError("not installed")
+                return real_import(name, *args, **kwargs)
+
+            with mock.patch("builtins.__import__", side_effect=no_pygments):
+                rendered = skill_status.render_review_diff(review, skill_status.DiffRenderer(True))
+
+            self.assertIn("\x1b[", rendered)
+            self.assertIn("+content", rendered)
 
     def test_diff_marks_binary_files_and_preserves_an_internal_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

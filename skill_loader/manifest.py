@@ -129,8 +129,8 @@ def _load_agent_paths(manifest: Any, config_file: Path) -> list[Path]:
     for value in agent_paths_table["paths"]:
         if not isinstance(value, str) or not value:
             raise ManifestError("Agent path must be a non-empty string")
-        if "~" in value or "$" in value or "%" in value:
+        if "$" in value or "%" in value or ("~" in value and not value.startswith("~")):
             raise ManifestError(f"Agent path must not use expansion: {value}")
-        path = Path(value)
+        path = Path(value).expanduser()
         configured_paths.append(path if path.is_absolute() else config_file.parent / path)
     return configured_paths
