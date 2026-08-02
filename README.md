@@ -13,7 +13,7 @@ been reviewed in the repository checkout and explicitly activated into
 `active/`. Agent paths only ever symlink into `active/`, never into `repos/`.
 Repository checkouts and active skills are local state and are ignored by Git.
 
-There is no `pending/` stage. After sync, `skill-status` compares configured
+There is no `pending/` stage. After sync, `sync-skills` compares configured
 skills in `repos/` against `active/`, shows every new or changed skill's diff,
 and lets you activate or reject it.
 
@@ -32,7 +32,7 @@ the planned clone or fast-forward operations without changing them.
    skills to import.
 2. Run `bin/sync-repos` to clone missing repositories into `repos/`, or pull
    existing ones.
-3. Run `bin/skill-status`. It displays a complete recursive unified diff for
+3. Run `bin/sync-skills`. It displays a complete recursive unified diff for
    each new or changed skill, one at a time, and prompts you to activate,
    reject, or quit before showing the next review.
    Approved skills are copied into `active/` and linked into configured agent
@@ -46,7 +46,7 @@ The commands are deliberately separate. Skill status never syncs, pulls, or
 executes code from a source repository. Skipping activation is denial; denial
 is not stored.
 
-`bin/skill-status --color auto` is the default: it colours interactive
+`bin/sync-skills --color auto` is the default: it colours interactive
 terminals, while captured output stays plain. Use `--color always` to force
 ANSI styling or `--color never` for plain logs. If Pygments is installed,
 changed text is highlighted by filename; it is never required.
@@ -94,7 +94,7 @@ The implementation should provide these executable commands under `bin/`:
 | Command | Allowed changes | Required behaviour |
 | --- | --- | --- |
 | `bin/sync-repos` | `repos/` | Clone a missing configured repository; otherwise fast-forward its configured branch. Refuse a dirty checkout, a URL mismatch, or a non-fast-forward update. |
-| `bin/skill-status` | `active/`, configured agent skill directories | Compare each configured skill's checkout path to its active snapshot. Show a complete diff and prompt for every new or changed skill; an approval immediately copies it into `active/` and refreshes its configured agent links. Report missing skills, skip unchanged skills, and offer confirmed orphan removal after review. Dirty checkouts are allowed. |
+| `bin/sync-skills` | `active/`, configured agent skill directories | Compare each configured skill's checkout path to its active snapshot. Show a complete diff and prompt for every new or changed skill; an approval immediately copies it into `active/` and refreshes its configured agent links. Report missing skills, skip unchanged skills, and offer confirmed orphan removal after review. Dirty checkouts are allowed. |
 
 Each command should fail before making partial changes whenever its inputs can
 be validated up front. Promotion and confirmed orphan removal must use a
@@ -114,7 +114,7 @@ Treat repository checkouts as untrusted source code. Before activation, review:
   commands; and
 - unexpected symlinks or files outside the declared skill directory.
 
-`bin/skill-status` displays the checkout's diff against the previously active
+`bin/sync-skills` displays the checkout's diff against the previously active
 version before it accepts an approval. The approval immediately promotes that
 reviewed skill; there is no approval record or separate activation step.
 

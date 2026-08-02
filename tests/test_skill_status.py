@@ -34,7 +34,7 @@ class SkillStatusTests(unittest.TestCase):
         self, project: Path, *arguments: str, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(project / "bin" / "skill-status"), *arguments],
+            [str(project / "bin" / "sync-skills"), *arguments],
             cwd=project,
             text=True,
             capture_output=True,

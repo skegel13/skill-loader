@@ -1,6 +1,6 @@
 # Use skill status as the interactive promotion gate
 
-`bin/skill-status` replaces the separate read-only status and activation steps.
+`bin/sync-skills` replaces the separate read-only status and activation steps.
 After `sync-repos`, it shows a full diff for each new or changed configured
 skill and immediately promotes only individually approved skills. Rejections
 are no-ops, not durable decisions. This keeps review and the promoted bytes in
