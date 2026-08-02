@@ -9,8 +9,8 @@ external repository → repos/ → active/ → agent symlink
 ```
 
 There is no `pending/` stage. The repository checkout is the review surface;
-activation copies approved skills into `active/`. Agent symlinks may point only
-into `active/`.
+skill status copies explicitly approved skills into `active/`. Agent symlinks
+may point only into `active/`.
 
 ## Invariants
 
@@ -23,17 +23,18 @@ into `active/`.
   contents.
 - Synchronization only clones or fast-forward-pulls configured repositories.
   It must not reset, clean, rebase, force-pull, or modify a dirty checkout.
-- Skill status is read-only: it compares configured skills in repository
-  checkouts against active skills and reports orphans. It does not write
-  `active/`, create agent links, execute imported files, or install packages.
-- Activation is the only operation that writes `active/` or agent skill
-  directories. It copies explicitly named skills from the checkout working tree
-  (dirty checkouts allowed), may touch only paths owned by the manifest, and
-  must only create symlinks that point into `active/`. It never bulk-activates
-  every differing skill.
-- Sync never mutates `active/`. Skipping activation is denial; denial is not
-  stored. Orphans are left in place and only reported until an explicit
-  removal command exists.
+- Skill status is the interactive review gate: it shows a full diff for every
+  new or changed configured skill and prompts to activate or reject it. It
+  does not execute imported files or install packages. Rejected skills are not
+  recorded; a rejected update leaves the existing active snapshot untouched.
+- Skill status is the only operation that writes `active/` or agent skill
+  directories. It copies only explicitly confirmed skills from the checkout
+  working tree (dirty checkouts allowed), may touch only paths owned by the
+  manifest, and must only create symlinks that point into `active/`.
+- Sync never mutates `active/`. Skill status may offer to remove each orphan
+  after review, but only after explicit confirmation. It may remove an orphan
+  active skill and matching symlinks in currently configured agent paths; it
+  must preserve all unmanaged files and links.
 - Reject malformed input early: duplicate repository or skill names, absolute
   or escaping repository skill paths, missing `SKILL.md`, and agent skill paths
   using `~` or environment-variable expansion are errors. Resolve relative
@@ -44,11 +45,11 @@ into `active/`.
 
 ## Implementation shape
 
-Keep the three commands independent and small:
+Keep the two commands independent and small:
 
 1. `bin/sync-repos` owns Git checkout state.
-2. `bin/skill-status` owns read-only comparison against `active/`.
-3. `bin/activate-skills` owns promotion into `active/` and agent symlinks.
+2. `bin/skill-status` owns comparison, interactive review, promotion into
+   `active/`, agent symlinks, and confirmed orphan removal.
 
 Put shared manifest parsing, path validation, and filesystem operations in a
 small library with unit tests. Commands should print the repository, skill, and
@@ -68,13 +69,16 @@ Cover at least these behaviours before changing the command implementation:
 - clone versus clean fast-forward pull, and refusal of dirty or divergent
   repositories;
 - manifest validation and path traversal rejection;
-- skill status that never changes active skills or agent directories;
+- skill status that shows complete diffs and promotes only explicitly approved
+  skills;
 - rejection of source symlinks escaping the skill root;
-- activation from a checkout copies into `active/` and creates correct
+- approved promotion from a checkout copies into `active/` and creates correct
   relative or absolute links into `active/`;
-- activation requires explicit skill names and may run on a dirty checkout;
+- rejected skills leave prior active snapshots and links usable, while approved
+  skills may come from a dirty checkout;
 - a conflicting unmanaged target is preserved;
-- orphans are reported and not deleted automatically; and
-- failures during activation leave prior active skills and managed links usable.
+- orphans are removed only after confirmation, without touching unmanaged
+  files or links; and
+- failures during promotion leave prior active skills and managed links usable.
 
 Treat imported skill contents as test fixtures, never executable setup steps.

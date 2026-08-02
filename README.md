@@ -5,7 +5,7 @@ review-first pipeline:
 
 ```text
 config.toml → repos/ → active/ → agent skill directories
-                  clone/pull  activate   symlink
+                  clone/pull  review     symlink
 ```
 
 Nothing from an external repository becomes available to an agent until it has
@@ -13,8 +13,9 @@ been reviewed in the repository checkout and explicitly activated into
 `active/`. Agent paths only ever symlink into `active/`, never into `repos/`.
 Repository checkouts and active skills are local state and are ignored by Git.
 
-There is no `pending/` stage. After sync, compare configured skills in `repos/`
-against `active/`, then activate named skills you approve.
+There is no `pending/` stage. After sync, `skill-status` compares configured
+skills in `repos/` against `active/`, shows every new or changed skill's diff,
+and lets you activate or reject it.
 
 ## Requirements
 
@@ -31,17 +32,18 @@ the planned clone or fast-forward operations without changing them.
    skills to import.
 2. Run `bin/sync-repos` to clone missing repositories into `repos/`, or pull
    existing ones.
-3. Run `bin/skill-status` to compare each configured skill in the checkout
-   against its active snapshot (new / changed / unchanged / missing), and to
-   report orphans.
-4. Inspect every changed or new skill in `repos/`, including referenced
-   scripts and files.
-5. Run `bin/activate-skills` with explicit skill names to copy those skills
-   into `active/` and create the configured agent symlinks.
+3. Run `bin/skill-status`. It displays a complete recursive unified diff for
+   each new or changed skill and prompts you to activate, reject, or quit.
+   Approved skills are copied into `active/` and linked into configured agent
+   paths immediately; rejected skills are left unchanged. Unchanged skills are
+   skipped and missing configured skills are reported.
+4. At the end, it reports each orphaned active skill or managed link and offers
+   to remove it. Confirmed cleanup touches only that active skill and matching
+   links in currently configured agent paths.
 
-The commands are deliberately separate. Skill status never activates a skill,
-and activation must never sync, pull, or execute code from a source repo.
-Skipping activation is denial; denial is not stored.
+The commands are deliberately separate. Skill status never syncs, pulls, or
+executes code from a source repository. Skipping activation is denial; denial
+is not stored.
 
 ## Manifest
 
@@ -86,16 +88,15 @@ The implementation should provide these executable commands under `bin/`:
 | Command | Allowed changes | Required behaviour |
 | --- | --- | --- |
 | `bin/sync-repos` | `repos/` | Clone a missing configured repository; otherwise fast-forward its configured branch. Refuse a dirty checkout, a URL mismatch, or a non-fast-forward update. |
-| `bin/skill-status` | none (read-only) | Compare each configured skill's checkout path to its active snapshot. Report new / changed / unchanged / missing, plus orphans. Never write `active/` or agent links. |
-| `bin/activate-skills` | `active/`, configured agent skill directories | Copy explicitly named skills from the repository checkout working tree into `active/`, then create or replace only the corresponding configured symlinks into `active/`. Never bulk-activate every diff. Dirty checkouts are allowed. |
+| `bin/skill-status` | `active/`, configured agent skill directories | Compare each configured skill's checkout path to its active snapshot. Show a complete diff and prompt for every new or changed skill; an approval immediately copies it into `active/` and refreshes its configured agent links. Report missing skills, skip unchanged skills, and offer confirmed orphan removal after review. Dirty checkouts are allowed. |
 
 Each command should fail before making partial changes whenever its inputs can
-be validated up front. Activation must use a recoverable swap or rollback
-strategy so a failed link update does not leave `active/` and agent directories
-out of sync. No command should delete a skill, checkout, or symlink that the
-manifest does not own. Orphans (active skills or managed links with no
-manifest entry) are reported by skill status and left in place until an
-explicit removal command exists.
+be validated up front. Promotion and confirmed orphan removal must use a
+recoverable swap or rollback strategy so a failed link update does not leave
+`active/` and agent directories out of sync. No command should delete a skill,
+checkout, or symlink that it does not manage. An orphan is removable only after
+confirmation and only when its active directory and matching symlinks in
+currently configured agent paths can be identified safely.
 
 ## Review checklist
 
@@ -107,10 +108,9 @@ Treat repository checkouts as untrusted source code. Before activation, review:
   commands; and
 - unexpected symlinks or files outside the declared skill directory.
 
-Use `bin/skill-status` to compare the checkout with the previously activated
-version when updating an existing skill. The human approval decision remains
-outside skill status: activation with explicit skill names is the only approve
-step.
+`bin/skill-status` displays the checkout's diff against the previously active
+version before it accepts an approval. The approval immediately promotes that
+reviewed skill; there is no approval record or separate activation step.
 
 ## Local directories
 

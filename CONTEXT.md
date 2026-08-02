@@ -26,24 +26,22 @@ It holds symlinks into `active/` only, never into repository checkouts.
 _Avoid_: agent skills folder, install path
 
 **Skill status**:
-The read-only review operation: content comparison of configured skills in
-repository checkouts against active skills, including new / changed /
-unchanged / missing, plus orphans. Never copies, links, or mutates active
-skills. Does not report Git dirty state.
-_Avoid_: fetch-skills, pending inspection, interactive approval prompt, Review
-(as a command name)
+The interactive review gate: it compares configured skills in repository
+checkouts against active skills, shows each new or changed skill's diff, and
+lets the operator promote or skip that skill. It also reports unchanged,
+missing, and orphaned skills. Does not report Git dirty state.
+_Avoid_: fetch-skills, pending inspection
 
 **Activation**:
-The single write that copies named skills from a repository checkout's working
-tree into active skills and refreshes the matching agent-path links. This is
-the approval; there is no separate approve-then-link phase. Requires explicit
-skill names (no activate-all). A dirty checkout is allowed. Skipping is
-denial; denial is not stored.
-_Avoid_: install, publish, deploy, activate-all, approve-skills (as a second
-write step before linking)
+The promotion that copies a reviewed skill from a repository checkout's
+working tree into active skills and refreshes its matching agent-path links.
+It follows an explicit confirmation during skill status; there is no separate
+approve-then-link phase. A dirty checkout is allowed. Skipping is denial;
+denial is not stored.
+_Avoid_: install, publish, deploy, approve-skills (as a separate step)
 
 **Orphan**:
 An active skill or managed agent-path link that no longer corresponds to a
-manifest entry. Left in place; skill status reports orphans, but no removal
-command is in scope yet.
+manifest entry. Skill status reports it and may remove it only after an
+explicit confirmation; unrelated files and links are unmanaged and preserved.
 _Avoid_: stale skill, unused skill, dangling install
