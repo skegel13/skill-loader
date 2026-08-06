@@ -262,6 +262,44 @@ def validate_agent_targets(review: Review, agent_paths: tuple[Path, ...], active
             raise UnsafeSkillError(f"Unmanaged agent target conflicts: {target}")
 
 
+def missing_agent_links(
+    reviews: list[Review], agent_paths: tuple[Path, ...], active_directory: Path
+) -> list[Path]:
+    """Return agent-path targets that should link an already-active skill but do not."""
+    missing: list[Path] = []
+    for review in reviews:
+        if review.active is None:
+            continue
+        active_skill = active_directory / review.skill.name
+        for agent_path in agent_paths:
+            target = agent_path / review.skill.name
+            if not _managed_link(target, active_skill):
+                missing.append(target)
+    return missing
+
+
+def ensure_agent_link(skill_name: str, active_directory: Path, agent_path: Path) -> None:
+    """Create a managed agent symlink for an already-active skill when it is missing."""
+    _validate_agent_path(agent_path)
+    active_target = active_directory / skill_name
+    if not active_target.is_dir() or active_target.is_symlink():
+        raise UnsafeSkillError(f"Active skill path must be a directory, not a symlink: {active_target}")
+    agent_path.mkdir(parents=True, exist_ok=True)
+    target = agent_path / skill_name
+    if _managed_link(target, active_target):
+        return
+    if target.exists() or target.is_symlink():
+        raise UnsafeSkillError(f"Unmanaged agent target conflicts: {target}")
+    temporary = agent_path / f".{skill_name}.new-{next(tempfile._get_candidate_names())}"
+    try:
+        temporary.symlink_to(os.path.relpath(active_target, agent_path))
+        os.replace(temporary, target)
+    except Exception:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+        raise
+
+
 def _validate_agent_path(agent_path: Path) -> None:
     if agent_path.is_symlink():
         raise UnsafeSkillError(f"Agent path must be a directory, not a symlink: {agent_path}")
@@ -427,8 +465,9 @@ def main(arguments: list[str] | None = None) -> int:
         for agent_path in manifest.agent_paths:
             _validate_agent_path(agent_path)
         candidates = [review for review in reviews if review.status in {"new", "changed"}]
-        for review in candidates:
-            validate_agent_targets(review, manifest.agent_paths, active_directory)
+        for review in reviews:
+            if review.status in {"new", "changed"} or review.active is not None:
+                validate_agent_targets(review, manifest.agent_paths, active_directory)
     except (ManifestError, UnsafeSkillError) as error:
         print(error, file=sys.stderr)
         return 2
@@ -437,6 +476,7 @@ def main(arguments: list[str] | None = None) -> int:
         print(f"{review.skill.repository_name}/{review.skill.name}: {review.status}")
     orphans = orphan_skills({skill.name for skill in manifest.skills}, active_directory)
     links = orphan_links({skill.name for skill in manifest.skills}, active_directory, manifest.agent_paths)
+    absent_links = missing_agent_links(reviews, manifest.agent_paths, active_directory)
     if options.dry_run:
         for index, review in enumerate(candidates, start=1):
             print(renderer.review_heading(
@@ -448,7 +488,9 @@ def main(arguments: list[str] | None = None) -> int:
             print(f"active/{orphan.name}: orphan")
         for link in links:
             print(f"{link}: orphan link")
-        return 1 if candidates or orphans or links or any(review.status == "missing" for review in reviews) else 0
+        for link in absent_links:
+            print(f"{link}: missing link")
+        return 1 if candidates or orphans or links or absent_links or any(review.status == "missing" for review in reviews) else 0
     try:
         for index, review in enumerate(candidates, start=1):
             print(renderer.review_heading(
@@ -464,6 +506,9 @@ def main(arguments: list[str] | None = None) -> int:
             if answer == "a":
                 print(f"Activating {review.skill.repository_name}/{review.skill.name} into {active_directory / review.skill.name}")
                 promote(review, active_directory, manifest.agent_paths)
+        for link in missing_agent_links(reviews, manifest.agent_paths, active_directory):
+            print(f"Linking {link}")
+            ensure_agent_link(link.name, active_directory, link.parent)
         for orphan in orphans:
             print(f"active/{orphan.name}: orphan")
         for link in links:

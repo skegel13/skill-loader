@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import builtins
+import io
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
-import io
-import builtins
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 from skill_loader import skill_status
 
@@ -200,6 +201,9 @@ class SkillStatusTests(unittest.TestCase):
             active.mkdir(parents=True)
             shutil.copy2(source / "SKILL.md", active / "SKILL.md")
             shutil.copy2(source / "notes.md", active / "notes.md")
+            link = project / "agents" / "skills" / "release-checklist"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(active)
 
             result = self.run_status(project)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -212,6 +216,84 @@ class SkillStatusTests(unittest.TestCase):
             self.assertIn("-first", result.stdout)
             self.assertIn("+second", result.stdout)
             self.assertEqual((active / "notes.md").read_text(encoding="utf-8"), "first\n")
+
+    def test_creates_missing_agent_links_for_an_unchanged_active_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            (project / "config.toml").write_text(
+                "[agent_paths]\npaths = [\"./agents/skills\", \"./other/skills\"]\n\n"
+                "[[repository]]\n"
+                "name = \"fixture\"\nurl = \"https://example.invalid/fixture.git\"\nbranch = \"main\"\n"
+                "skills = [{ name = \"release-checklist\", path = \"skills/release-checklist\" }]\n",
+                encoding="utf-8",
+            )
+            source = self.create_source_skill(project)
+            active = project / "active" / "release-checklist"
+            active.mkdir(parents=True)
+            shutil.copy2(source / "SKILL.md", active / "SKILL.md")
+
+            result = self.run_status(project)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("fixture/release-checklist: unchanged", result.stdout)
+            for relative in ("agents/skills", "other/skills"):
+                link = project / relative / "release-checklist"
+                self.assertIn(f"Linking {project.resolve() / relative / 'release-checklist'}", result.stdout)
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(link.resolve(), active.resolve())
+
+    def test_dry_run_reports_missing_agent_links_without_creating_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            source = self.create_source_skill(project)
+            active = project / "active" / "release-checklist"
+            active.mkdir(parents=True)
+            shutil.copy2(source / "SKILL.md", active / "SKILL.md")
+
+            result = self.run_status(project, "--dry-run")
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("fixture/release-checklist: unchanged", result.stdout)
+            link = project / "agents" / "skills" / "release-checklist"
+            self.assertIn(f"{project.resolve() / 'agents' / 'skills' / 'release-checklist'}: missing link", result.stdout)
+            self.assertFalse(link.exists())
+            self.assertFalse(link.is_symlink())
+
+    def test_refuses_unmanaged_conflict_when_repairing_a_missing_link(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            source = self.create_source_skill(project)
+            active = project / "active" / "release-checklist"
+            active.mkdir(parents=True)
+            shutil.copy2(source / "SKILL.md", active / "SKILL.md")
+            target = project / "agents" / "skills" / "release-checklist"
+            target.mkdir(parents=True)
+            (target / "keep.txt").write_text("keep\n", encoding="utf-8")
+
+            result = self.run_status(project)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Unmanaged agent target conflicts", result.stderr)
+            self.assertTrue((target / "keep.txt").is_file())
+            self.assertFalse(target.is_symlink())
+
+    def test_leaves_a_correct_managed_agent_link_alone(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            project = self.make_project(temporary_directory)
+            source = self.create_source_skill(project)
+            active = project / "active" / "release-checklist"
+            active.mkdir(parents=True)
+            shutil.copy2(source / "SKILL.md", active / "SKILL.md")
+            link = project / "agents" / "skills" / "release-checklist"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(Path(os.path.relpath(active, link.parent)))
+
+            result = self.run_status(project)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "fixture/release-checklist: unchanged\n")
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.resolve(), active.resolve())
 
     def test_approved_update_replaces_the_active_snapshot_and_existing_managed_link(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
