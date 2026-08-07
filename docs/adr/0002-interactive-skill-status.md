@@ -1,4 +1,4 @@
-# Use skill status as the interactive promotion gate
+# Use sync-skills as the interactive promotion gate
 
 `bin/sync-skills` replaces the separate read-only status and activation steps.
 After `sync-repos`, it shows a full diff for each new or changed configured

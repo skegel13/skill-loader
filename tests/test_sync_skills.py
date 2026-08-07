@@ -10,13 +10,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from skill_loader import skill_status
+from skill_loader import sync_skills
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-class SkillStatusTests(unittest.TestCase):
+class SyncSkillsTests(unittest.TestCase):
     def make_project(self, directory: str) -> Path:
         project = Path(directory) / "loader"
         project.mkdir()
@@ -31,7 +31,7 @@ class SkillStatusTests(unittest.TestCase):
         )
         return project
 
-    def run_status(
+    def run_sync_skills(
         self, project: Path, *arguments: str, input: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -53,7 +53,7 @@ class SkillStatusTests(unittest.TestCase):
             project = self.make_project(temporary_directory)
             source = self.create_source_skill(project)
             (source / "notes.md").write_text("Inspect this\n", encoding="utf-8")
-            result = self.run_status(project, input="a\n")
+            result = self.run_sync_skills(project, input="a\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("fixture/release-checklist: new", result.stdout)
@@ -71,7 +71,7 @@ class SkillStatusTests(unittest.TestCase):
             project = self.make_project(temporary_directory)
             self.create_source_skill(project)
 
-            result = self.run_status(project, "--dry-run")
+            result = self.run_sync_skills(project, "--dry-run")
 
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn("fixture/release-checklist: new", result.stdout)
@@ -106,8 +106,8 @@ class SkillStatusTests(unittest.TestCase):
                     answer_after_expected_review.called = True
                 return next(answers)
 
-            with mock.patch.object(skill_status, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", side_effect=answer_after_expected_review):
-                self.assertEqual(skill_status.main(["--color", "never"]), 0)
+            with mock.patch.object(sync_skills, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", side_effect=answer_after_expected_review):
+                self.assertEqual(sync_skills.main(["--color", "never"]), 0)
 
             self.assertLess(output.getvalue().index("Review 1/2"), output.getvalue().index("Review 2/2"))
 
@@ -131,8 +131,8 @@ class SkillStatusTests(unittest.TestCase):
             (orphan / "SKILL.md").write_text("# Old\n", encoding="utf-8")
             output = io.StringIO()
 
-            with mock.patch.object(skill_status, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", return_value="q"):
-                self.assertEqual(skill_status.main(["--color", "never"]), 0)
+            with mock.patch.object(sync_skills, "PROJECT_DIRECTORY", project), mock.patch("sys.stdout", output), mock.patch("builtins.input", return_value="q"):
+                self.assertEqual(sync_skills.main(["--color", "never"]), 0)
 
             self.assertIn("Review 1/2", output.getvalue())
             self.assertNotIn("Review 2/2", output.getvalue())
@@ -143,9 +143,9 @@ class SkillStatusTests(unittest.TestCase):
             project = self.make_project(temporary_directory)
             self.create_source_skill(project)
 
-            auto = self.run_status(project, "--dry-run")
-            never = self.run_status(project, "--dry-run", "--color", "never")
-            always = self.run_status(project, "--dry-run", "--color", "always")
+            auto = self.run_sync_skills(project, "--dry-run")
+            never = self.run_sync_skills(project, "--dry-run", "--color", "never")
+            always = self.run_sync_skills(project, "--dry-run", "--color", "always")
 
             self.assertNotIn("\x1b[", auto.stdout)
             self.assertNotIn("\x1b[", never.stdout)
@@ -156,8 +156,8 @@ class SkillStatusTests(unittest.TestCase):
             project = self.make_project(temporary_directory)
             source = self.create_source_skill(project)
             (source / "unknown.extension").write_text("content\n", encoding="utf-8")
-            review = skill_status.inspect_skill(
-                skill_status.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
+            review = sync_skills.inspect_skill(
+                sync_skills.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
                 project / "repos",
                 project / "active",
             )
@@ -169,7 +169,7 @@ class SkillStatusTests(unittest.TestCase):
                 return real_import(name, *args, **kwargs)
 
             with mock.patch("builtins.__import__", side_effect=no_pygments):
-                rendered = skill_status.render_review_diff(review, skill_status.DiffRenderer(True))
+                rendered = sync_skills.render_review_diff(review, sync_skills.DiffRenderer(True))
 
             self.assertIn("\x1b[", rendered)
             self.assertIn("+content", rendered)
@@ -183,7 +183,7 @@ class SkillStatusTests(unittest.TestCase):
             (source / "guide-link.md").symlink_to("guide.md")
             (source / "empty").mkdir()
 
-            result = self.run_status(project, input="a\n")
+            result = self.run_sync_skills(project, input="a\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Binary or type-changing entry", result.stdout)
@@ -205,12 +205,12 @@ class SkillStatusTests(unittest.TestCase):
             link.parent.mkdir(parents=True)
             link.symlink_to(active)
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "fixture/release-checklist: unchanged\n")
 
             (source / "notes.md").write_text("second\n", encoding="utf-8")
-            result = self.run_status(project, input="r\n")
+            result = self.run_sync_skills(project, input="r\n")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("fixture/release-checklist: changed", result.stdout)
             self.assertIn("-first", result.stdout)
@@ -232,7 +232,7 @@ class SkillStatusTests(unittest.TestCase):
             active.mkdir(parents=True)
             shutil.copy2(source / "SKILL.md", active / "SKILL.md")
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("fixture/release-checklist: unchanged", result.stdout)
@@ -250,7 +250,7 @@ class SkillStatusTests(unittest.TestCase):
             active.mkdir(parents=True)
             shutil.copy2(source / "SKILL.md", active / "SKILL.md")
 
-            result = self.run_status(project, "--dry-run")
+            result = self.run_sync_skills(project, "--dry-run")
 
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn("fixture/release-checklist: unchanged", result.stdout)
@@ -270,7 +270,7 @@ class SkillStatusTests(unittest.TestCase):
             target.mkdir(parents=True)
             (target / "keep.txt").write_text("keep\n", encoding="utf-8")
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Unmanaged agent target conflicts", result.stderr)
@@ -288,7 +288,7 @@ class SkillStatusTests(unittest.TestCase):
             link.parent.mkdir(parents=True)
             link.symlink_to(Path(os.path.relpath(active, link.parent)))
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "fixture/release-checklist: unchanged\n")
@@ -306,7 +306,7 @@ class SkillStatusTests(unittest.TestCase):
             link.parent.mkdir(parents=True)
             link.symlink_to(active)
 
-            result = self.run_status(project, input="a\n")
+            result = self.run_sync_skills(project, input="a\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((active / "SKILL.md").read_text(encoding="utf-8"), "# New\n")
@@ -326,7 +326,7 @@ class SkillStatusTests(unittest.TestCase):
             unmanaged = active / "notes.txt"
             unmanaged.write_text("keep\n", encoding="utf-8")
 
-            result = self.run_status(project, input="y\n")
+            result = self.run_sync_skills(project, input="y\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("fixture/release-checklist: missing", result.stdout)
@@ -343,7 +343,7 @@ class SkillStatusTests(unittest.TestCase):
             orphan.mkdir(parents=True)
             (orphan / "SKILL.md").write_text("# Old\n", encoding="utf-8")
 
-            result = self.run_status(project, input="q\n")
+            result = self.run_sync_skills(project, input="q\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((project / "active" / "release-checklist").exists())
@@ -357,7 +357,7 @@ class SkillStatusTests(unittest.TestCase):
             target.mkdir(parents=True)
             (target / "keep.txt").write_text("keep\n", encoding="utf-8")
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Unmanaged agent target conflicts", result.stderr)
@@ -372,7 +372,7 @@ class SkillStatusTests(unittest.TestCase):
             link = agent_path / "old-skill"
             link.symlink_to(project / "active" / "old-skill")
 
-            result = self.run_status(project, input="y\n")
+            result = self.run_sync_skills(project, input="y\n")
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("orphan link", result.stdout)
@@ -391,7 +391,7 @@ class SkillStatusTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Agent path must be a directory, not a symlink", result.stderr)
@@ -403,7 +403,7 @@ class SkillStatusTests(unittest.TestCase):
             outside.mkdir()
             (project / "agents").symlink_to(outside)
 
-            result = self.run_status(project, "--dry-run")
+            result = self.run_sync_skills(project, "--dry-run")
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Agent path must not have a symlinked ancestor", result.stderr)
@@ -415,7 +415,7 @@ class SkillStatusTests(unittest.TestCase):
             active.parent.mkdir()
             active.symlink_to(project / "outside")
 
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Active skill path must be a directory, not a symlink", result.stderr)
@@ -434,13 +434,13 @@ class SkillStatusTests(unittest.TestCase):
             agent_path.mkdir()
             link = agent_path / "release-checklist"
             link.symlink_to(active)
-            review = skill_status.Review(
-                skill_status.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
+            review = sync_skills.Review(
+                sync_skills.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
                 source,
                 active,
                 "changed",
             )
-            real_replace = skill_status.os.replace
+            real_replace = sync_skills.os.replace
             calls = 0
 
             def fail_link_swap(source_path: Path | str, target_path: Path | str) -> None:
@@ -450,9 +450,9 @@ class SkillStatusTests(unittest.TestCase):
                     raise OSError("injected link failure")
                 real_replace(source_path, target_path)
 
-            with mock.patch.object(skill_status.os, "replace", side_effect=fail_link_swap):
+            with mock.patch.object(sync_skills.os, "replace", side_effect=fail_link_swap):
                 with self.assertRaises(OSError):
-                    skill_status.promote(review, active_root, (agent_path,))
+                    sync_skills.promote(review, active_root, (agent_path,))
 
             self.assertEqual((active / "SKILL.md").read_text(encoding="utf-8"), "# Old\n")
             self.assertTrue(link.is_symlink())
@@ -469,8 +469,8 @@ class SkillStatusTests(unittest.TestCase):
             active = active_root / "release-checklist"
             active.mkdir(parents=True)
             (active / "SKILL.md").write_text("# Old\n", encoding="utf-8")
-            review = skill_status.Review(skill_status.Skill("fixture", "release-checklist", Path("skills/release-checklist")), source, active, "changed")
-            real_replace = skill_status.os.replace
+            review = sync_skills.Review(sync_skills.Skill("fixture", "release-checklist", Path("skills/release-checklist")), source, active, "changed")
+            real_replace = sync_skills.os.replace
             calls = 0
 
             def fail_active_swap(source_path: Path | str, target_path: Path | str) -> None:
@@ -480,9 +480,9 @@ class SkillStatusTests(unittest.TestCase):
                     raise OSError("injected active swap failure")
                 real_replace(source_path, target_path)
 
-            with mock.patch.object(skill_status.os, "replace", side_effect=fail_active_swap):
+            with mock.patch.object(sync_skills.os, "replace", side_effect=fail_active_swap):
                 with self.assertRaises(OSError):
-                    skill_status.promote(review, active_root, ())
+                    sync_skills.promote(review, active_root, ())
 
             self.assertEqual((active / "SKILL.md").read_text(encoding="utf-8"), "# Old\n")
             self.assertFalse(list(active_root.glob(".*")))
@@ -496,13 +496,13 @@ class SkillStatusTests(unittest.TestCase):
             active_root = project / "active"
             agent_path = project / "agent"
             agent_path.mkdir()
-            review = skill_status.Review(
-                skill_status.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
+            review = sync_skills.Review(
+                sync_skills.Skill("fixture", "release-checklist", Path("skills/release-checklist")),
                 source,
                 None,
                 "new",
             )
-            real_replace = skill_status.os.replace
+            real_replace = sync_skills.os.replace
             calls = 0
 
             def fail_new_link_swap(source_path: Path | str, target_path: Path | str) -> None:
@@ -512,9 +512,9 @@ class SkillStatusTests(unittest.TestCase):
                     raise OSError("injected link failure")
                 real_replace(source_path, target_path)
 
-            with mock.patch.object(skill_status.os, "replace", side_effect=fail_new_link_swap):
+            with mock.patch.object(sync_skills.os, "replace", side_effect=fail_new_link_swap):
                 with self.assertRaises(OSError):
-                    skill_status.promote(review, active_root, (agent_path,))
+                    sync_skills.promote(review, active_root, (agent_path,))
 
             self.assertFalse((active_root / "release-checklist").exists())
             self.assertFalse((agent_path / "release-checklist").is_symlink())
@@ -525,20 +525,20 @@ class SkillStatusTests(unittest.TestCase):
             project = self.make_project(temporary_directory)
             source = project / "repos" / "fixture" / "skills" / "release-checklist"
             source.mkdir(parents=True)
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
             self.assertEqual(result.returncode, 2)
             self.assertIn("missing SKILL.md", result.stderr)
 
             outside = project / "outside.md"
             outside.write_text("# Outside\n", encoding="utf-8")
             (source / "SKILL.md").symlink_to(outside)
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
             self.assertEqual(result.returncode, 2)
             self.assertIn("Source symlink is unsafe", result.stderr)
 
             (source / "SKILL.md").unlink()
             (source / "SKILL.md").symlink_to(source / "missing.md")
-            result = self.run_status(project)
+            result = self.run_sync_skills(project)
             self.assertEqual(result.returncode, 2)
             self.assertIn("missing SKILL.md", result.stderr)
 
@@ -565,7 +565,7 @@ class SkillStatusTests(unittest.TestCase):
                 )
 
                 with self.subTest(message=message):
-                    result = self.run_status(project)
+                    result = self.run_sync_skills(project)
                     self.assertEqual(result.returncode, 2)
                     self.assertIn(message, result.stderr)
                     self.assertFalse((project / "active").exists())

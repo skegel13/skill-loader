@@ -1,7 +1,8 @@
 # skill-loader
 
-Domain language for the review gate. There is no `pending/` stage: run skill
-status against a repository checkout, then activate named skills into `active/`.
+Domain language for the review gate. There is no `pending/` stage: run
+`sync-skills` against a repository checkout, then activate named skills into
+`active/`.
 
 ## Language
 
@@ -25,23 +26,23 @@ A configured directory (`agent_paths.paths`) where an agent discovers skills.
 It holds symlinks into `active/` only, never into repository checkouts.
 _Avoid_: agent skills folder, install path
 
-**Skill status**:
-The interactive review gate: it compares configured skills in repository
-checkouts against active skills, shows each new or changed skill's diff, and
-lets the operator promote or skip that skill. It also reports unchanged,
-missing, and orphaned skills. Does not report Git dirty state.
-_Avoid_: fetch-skills, pending inspection
+**Sync skills**:
+The interactive review gate (`bin/sync-skills`): it compares configured skills
+in repository checkouts against active skills, shows each new or changed
+skill's diff, and lets the operator promote or skip that skill. It also reports
+unchanged, missing, and orphaned skills. Does not report Git dirty state.
+_Avoid_: skill status, fetch-skills, pending inspection
 
 **Activation**:
 The promotion that copies a reviewed skill from a repository checkout's
 working tree into active skills and refreshes its matching agent-path links.
-It follows an explicit confirmation during skill status; there is no separate
+It follows an explicit confirmation during sync skills; there is no separate
 approve-then-link phase. A dirty checkout is allowed. Skipping is denial;
 denial is not stored.
 _Avoid_: install, publish, deploy, approve-skills (as a separate step)
 
 **Orphan**:
 An active skill or managed agent-path link that no longer corresponds to a
-manifest entry. Skill status reports it and may remove it only after an
+manifest entry. Sync skills reports it and may remove it only after an
 explicit confirmation; unrelated files and links are unmanaged and preserved.
 _Avoid_: stale skill, unused skill, dangling install

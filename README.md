@@ -42,7 +42,7 @@ the planned clone or fast-forward operations without changing them.
    to remove it. Confirmed cleanup touches only that active skill and matching
    links in currently configured agent paths.
 
-The commands are deliberately separate. Skill status never syncs, pulls, or
+The commands are deliberately separate. `sync-skills` never syncs, pulls, or
 executes code from a source repository. Skipping activation is denial; denial
 is not stored.
 

@@ -3,4 +3,4 @@ set -euo pipefail
 
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$project_dir"
-exec python3 -m skill_loader.skill_status "$@"
+exec python3 -m skill_loader.sync_skills "$@"
